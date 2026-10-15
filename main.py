@@ -36,17 +36,11 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
-MODELO_ACTIVO = "gemini-1.5-flash"
-
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
-    try:
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods and 'flash' in m.name:
-                MODELO_ACTIVO = m.name.replace("models/", "")
-                break
-    except Exception:
-        pass
+
+# Usamos explícitamente el modelo estándar y estable para evitar fallos de nombres
+MODELO_ACTIVO = "gemini-1.5-flash"
 
 def inicializar_db():
     if not DATABASE_URL:
@@ -80,7 +74,7 @@ def verificar_saludo_hoy():
             cursor.execute("INSERT INTO control_sesion (ultimo_saludo) VALUES (%s)", (hoy,))
             conn.commit()
             cursor.close()
-            conn.close()
+            cursor.close()
             return True
         cursor.close()
         conn.close()
@@ -335,7 +329,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print(f"Lúthien activa y completa con modelo: {MODELO_ACTIVO}")
+    print(f"Lúthien activa con modelo fijo: {MODELO_ACTIVO}")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
