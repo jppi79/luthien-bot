@@ -71,7 +71,7 @@ def verificar_saludo_hoy():
             cursor.execute("INSERT INTO control_sesion (ultimo_saludo) VALUES (%s)", (hoy,))
             conn.commit()
             cursor.close()
-            conn.close()
+            cursor.close()
             return True
         cursor.close()
         conn.close()
@@ -90,7 +90,7 @@ def guardar_recuerdo(texto):
             cursor.execute("INSERT INTO memoria (recuerdo) VALUES (%s)", (texto.strip(),))
             conn.commit()
         cursor.close()
-        conn.close()
+        cursor.close()
     except Exception as e:
         pass
 
@@ -103,7 +103,7 @@ def guardar_registro_medico(tipo, resumen, valores, observaciones):
         cursor.execute("INSERT INTO historial_medico (tipo_estudio, resumen_diagnostico, valores_clave, observaciones) VALUES (%s, %s, %s, %s)", (tipo, resumen, valores, observaciones))
         conn.commit()
         cursor.close()
-        conn.close()
+        cursor.close()
     except Exception as e:
         pass
 
@@ -186,7 +186,7 @@ def consultar_gemini(contenido_prompt):
         )
 
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name="gemini-2.5-flash",
             system_instruction=instrucciones
         )
         response = model.generate_content(contenido_prompt)
@@ -196,7 +196,7 @@ def consultar_gemini(contenido_prompt):
 
 def extraer_y_aprender(chat_id, texto_usuario):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         prompt_extraccion = (
             f"Analiza el texto del usuario: '{texto_usuario}'.\n"
             f"1. Si menciona fechas importantes, cumpleaños, citas, turnos, asados o eventos a recordar, responde en JSON con 'tipo': 'recordatorio' y los campos: evento, fecha_evento, antelacion.\n"
@@ -276,7 +276,6 @@ async def procesar_imagen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         img_bytes = await file.download_as_bytearray()
         caption = update.message.caption or "Analizá esta imagen."
         
-        # Procesamiento multimedia con SDK oficial
         imagen_parte = {"mime_type": "image/jpeg", "data": bytes(img_bytes)}
         respuesta_ia = consultar_gemini([caption, imagen_parte])
         threading.Thread(target=extraer_y_aprender, args=(chat_id, f"Imagen: {caption}. {respuesta_ia}",), daemon=True).start()
@@ -327,7 +326,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa con SDK oficial de Google...")
+    print("Lúthien activa con gemini-2.5-flash...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
