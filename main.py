@@ -172,7 +172,6 @@ def obtener_memoria_y_registros():
 
 # --- FUNCIÓN DE CLIMA ULTRA RESISTENTE ---
 def obtener_clima_actual():
-    # Intento 1: Open-Meteo
     try:
         url = "https://api.open-meteo.com/v1/forecast?latitude=-32.6997&longitude=-62.1028&current=temperature_2m,relative_humidity_2m,apparent_temperature&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Argentina/Cordoba"
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
@@ -190,7 +189,6 @@ def obtener_clima_actual():
     except Exception:
         pass
 
-    # Intento 2: wttr.in en JSON
     try:
         r2 = requests.get("https://wttr.in/Marcos_Juarez?format=j1", headers={"User-Agent": "curl/7.68.0"}, timeout=4)
         if r2.status_code == 200:
@@ -201,7 +199,7 @@ def obtener_clima_actual():
     except Exception:
         pass
 
-    return "CLIMA MARCOS JUÁREZ: Temperatura promedio estimada 22°C, templado, sin alertas de tormenta severa."
+    return "CLIMA MARCOS JUÁREZ: Temperatura promedio estimada 22°C, templado, sin alertas severas."
 
 # --------------------------------------------------------------------
 
@@ -226,7 +224,7 @@ def consultar_gemini(partes_contenido):
         f"- Fecha y hora actual: {ahora}\n"
         f"- Estado del clima: {clima_actual}\n"
         f"- Base de memoria y registros:\n{memoria_actual}\n\n"
-        f"REGLA DE INTERPRETACIÓN: Tenés siempre a disposición la información del clima actual y pronóstico arriba provista. Si el usuario pregunta sobre el clima, la temperatura, el tiempo de mañana o si va a llover, respondé de forma natural usando los datos presentados. PROHIBIDO decir que no podés consultar el clima o que hay un problema de red.\n"
+        f"REGLA DE INTERPRETACIÓN: Tenés siempre a disposición la información del clima actual y pronóstico. Si el usuario pregunta sobre el clima, la temperatura, el tiempo o si va a llover, respondé usando los datos de clima del contexto. PROHIBIDO decir que no podés consultar el clima.\n"
         f"REGLA CRÍTICA PARA AUDIOS: Al responder con notas de voz, comenzá siempre con una breve introducción natural y conversacional, seguida directamente de la respuesta. "
         f"PROHIBIDO recitar o enumerar los datos de su vida sin sentido. "
         f"Regla estricta: NO repitas su nombre bajo ninguna circunstancia. "
@@ -301,18 +299,17 @@ async def generar_audio_respuesta(texto):
     return archivo_audio
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hola. Mis capacidades de voz, texto, visión de imágenes/estudios médicos, cata de cannabis y memoria están listas.")
+    await update.message.reply_text("Hola. Mis capacidades de voz, texto, visión de documentos/imágenes, cata de cannabis y memoria están listas.")
 
 async def procesar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto_usuario = update.message.text
     if not GEMINI_KEY:
-        await update.message.reply_text("Error: Falta la clave de Gemini.")
+        await update.message.reply_text("Error: Falta la clave.")
         return
 
     threading.Thread(target=extraer_y_aprender, args=(texto_usuario,), daemon=True).start()
 
     texto_lower = texto_usuario.lower()
-
     if texto_lower.startswith("anotá que ") or texto_lower.startswith("aprendé que "):
         nuevo_conocimiento = texto_usuario.split(" ", 2)[2]
         guardar_recuerdo(nuevo_conocimiento)
@@ -323,7 +320,6 @@ async def procesar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         respuesta_ia = consultar_gemini([{"text": texto_usuario}])
-
         if quiere_audio:
             audio_path = await generar_audio_respuesta(respuesta_ia)
             with open(audio_path, 'rb') as audio_file:
@@ -334,7 +330,6 @@ async def procesar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         else:
             await update.message.reply_text(respuesta_ia)
-
     except Exception as e:
         await update.message.reply_text(f"Error interno: {str(e)}")
 
@@ -349,22 +344,42 @@ async def procesar_imagen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         img_bytes = await file.download_as_bytearray()
         img_base64 = base64.b64encode(img_bytes).decode('utf-8')
 
-        caption = update.message.caption or "Analizá esta imagen o estudio médico y extraé la información relevante."
-
+        caption = update.message.caption or "Analizá esta imagen."
         partes = [
             {"inline_data": {"mime_type": "image/jpeg", "data": img_base64}},
-            {"text": f"El usuario envió una imagen con este mensaje: '{caption}'. Si es un análisis médico, receta o informe, analizá los valores, diagnóstico y conclusiones principales."}
+            {"text": f"El usuario envió una imagen con este mensaje: '{caption}'. Analizá el contenido detalladamente."}
         ]
 
         respuesta_ia = consultar_gemini(partes)
-
-        prompt_medico = f"Imagen analizada. Mensaje: '{caption}'. Respuesta IA: '{respuesta_ia}'. Extraé el estudio médico si aplica."
-        threading.Thread(target=extraer_y_aprender, args=(prompt_medico,), daemon=True).start()
-
+        threading.Thread(target=extraer_y_aprender, args=(f"Imagen analizada: {caption}. {respuesta_ia}",), daemon=True).start()
         await update.message.reply_text(respuesta_ia)
-
     except Exception as e:
         await update.message.reply_text(f"Error procesando la imagen: {str(e)}")
+
+async def procesar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not GEMINI_KEY:
+        await update.message.reply_text("Error: Falta la clave.")
+        return
+
+    try:
+        doc = update.message.document
+        file = await doc.get_file()
+        doc_bytes = await file.download_as_bytearray()
+        doc_base64 = base64.b64encode(doc_bytes).decode('utf-8')
+
+        caption = update.message.caption or "Analizá este documento/PDF y extraé la información relevante."
+        mime_type = doc.mime_type or "application/pdf"
+
+        partes = [
+            {"inline_data": {"mime_type": mime_type, "data": doc_base64}},
+            {"text": f"El usuario envió un documento ({doc.file_name}) con este mensaje: '{caption}'. Analizá el texto, resumí los puntos clave, diagnóstico, valores o conclusiones principales."}
+        ]
+
+        respuesta_ia = consultar_gemini(partes)
+        threading.Thread(target=extraer_y_aprender, args=(f"Documento analizado: {doc.file_name}. {respuesta_ia}",), daemon=True).start()
+        await update.message.reply_text(respuesta_ia)
+    except Exception as e:
+        await update.message.reply_text(f"Error procesando el documento: {str(e)}")
 
 async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not GEMINI_KEY:
@@ -382,7 +397,6 @@ async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
 
         respuesta_ia = consultar_gemini(partes)
-
         audio_path = await generar_audio_respuesta(respuesta_ia)
         with open(audio_path, 'rb') as audio_file:
             await update.message.reply_voice(voice=audio_file)
@@ -390,7 +404,6 @@ async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             os.remove(audio_path)
         except:
             pass
-
     except Exception as e:
         await update.message.reply_text(f"Error procesando el audio: {str(e)}")
 
@@ -399,8 +412,9 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.VOICE, procesar_audio))
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
+    app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa con clima a prueba de fallas...")
+    print("Lúthien activa con soporte completo para documentos, PDFs, clima y BD...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
