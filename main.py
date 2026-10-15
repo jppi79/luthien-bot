@@ -154,8 +154,8 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 
 def consultar_gemini(partes_contenido):
     try:
-        # Usamos gemini-pro para garantizar compatibilidad total 100% con el endpoint v1beta
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
+        # Usamos el modelo correcto y estable gemini-1.5-flash
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
         ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M")
         base_conocimiento = obtener_contexto_completo()
         clima_actual = obtener_clima_actual()
@@ -183,17 +183,13 @@ def consultar_gemini(partes_contenido):
             f"4. Regla estricta: NO repitas su nombre bajo ninguna circunstancia. Respondé en español rioplatense."
         )
 
-        # Estructura compatible con gemini-pro (system_instruction integrado en contents o como instrucción directa)
         payload = {
-            "contents": [
-                {"role": "user", "parts": [{"text": instrucciones}]},
-                {"role": "model", "parts": [{"text": "Entendido. Aplicaré todas las reglas y directivas."}]},
-                {"role": "user", "parts": partes_contenido}
-            ]
+            "system_instruction": {"parts": [{"text": instrucciones}]},
+            "contents": [{"parts": partes_contenido}]
         }
 
         headers = {"Content-Type": "application/json"}
-        r = requests.post(url, json=payload, headers=headers, timeout=25)
+        r = requests.post(url, json=payload, headers=headers, timeout=30)
         if r.status_code == 200:
             datos = r.json()
             return datos['candidates'][0]['content']['parts'][0]['text']
@@ -203,7 +199,7 @@ def consultar_gemini(partes_contenido):
 
 def extraer_y_aprender(chat_id, texto_usuario):
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
         prompt_extraccion = (
             f"Analiza el texto del usuario: '{texto_usuario}'.\n"
             f"1. Si menciona fechas importantes, cumpleaños, citas, turnos, asados o eventos a recordar, responde en JSON con 'tipo': 'recordatorio' y los campos: evento, fecha_evento, antelacion.\n"
@@ -290,7 +286,7 @@ async def procesar_imagen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         img_bytes = await file.download_as_bytearray()
         img_base64 = base64.b64encode(img_bytes).decode('utf-8')
         caption = update.message.caption or "Analizá esta imagen."
-        partes = [{"text": caption}]
+        partes = [{"inline_data": {"mime_type": "image/jpeg", "data": img_base64}}, {"text": caption}]
         respuesta_ia = consultar_gemini(partes)
         threading.Thread(target=extraer_y_aprender, args=(chat_id, f"Imagen: {caption}. {respuesta_ia}",), daemon=True).start()
         await update.message.reply_text(respuesta_ia)
@@ -302,8 +298,11 @@ async def procesar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not GEMINI_KEY: return
     try:
         doc = update.message.document
+        file = await doc.get_file()
+        doc_bytes = await file.download_as_bytearray()
+        doc_base64 = base64.b64encode(doc_bytes).decode('utf-8')
         caption = update.message.caption or "Analizá este documento."
-        partes = [{"text": f"Documento recibido: {doc.file_name}. Mensaje: {caption}"}]
+        partes = [{"inline_data": {"mime_type": doc.mime_type or "application/pdf", "data": doc_base64}}, {"text": caption}]
         respuesta_ia = consultar_gemini(partes)
         threading.Thread(target=extraer_y_aprender, args=(chat_id, f"PDF {doc.file_name}: {caption}. {respuesta_ia}",), daemon=True).start()
         await update.message.reply_text(respuesta_ia)
@@ -316,7 +315,8 @@ async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         file = await update.message.voice.get_file()
         audio_bytes = await file.download_as_bytearray()
-        partes = [{"text": "El usuario envió una nota de voz."}]
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        partes = [{"inline_data": {"mime_type": "audio/ogg", "data": audio_base64}}, {"text": "Respondé a la nota de voz."}]
         respuesta_ia = consultar_gemini(partes)
         audio_path = await generar_audio_respuesta(respuesta_ia)
         if audio_path and os.path.exists(audio_path):
@@ -336,7 +336,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa con endpoint corregido...")
+    print("Lúthien activa y conectada con gemini-1.5-flash...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
