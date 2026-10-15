@@ -68,7 +68,7 @@ def verificar_saludo_hoy():
             cursor.execute("INSERT INTO control_sesion (ultimo_saludo) VALUES (%s)", (hoy,))
             conn.commit()
             cursor.close()
-            conn.close()
+            cursor.close()
             return True
         cursor.close()
         conn.close()
@@ -130,7 +130,7 @@ def obtener_contexto_completo():
         medicos = [f"Estudio: {m[0]} | Resumen: {m[1]} | Valores: {m[2]} | Obs: {m[3]}" for m in cursor.fetchall()]
 
         cursor.execute("SELECT evento, fecha_evento, antelacion FROM recordatorios WHERE notificado = FALSE ORDER BY fecha DESC")
-        recs = [f"Evento: {r[0]} | Fecha/Hora: {r[1]} | Antelación: {r[2]}" for r in recs_val := cursor.fetchall()]
+        recs = [f"Evento: {r[0]} | Fecha/Hora: {r[1]} | Antelación: {r[2]}" for r in cursor.fetchall()]
         
         cursor.close()
         conn.close()
@@ -195,7 +195,6 @@ def consultar_gemini(partes_contenido):
         f"5. Regla estricta: NO repitas su nombre bajo ninguna circunstancia. Respondé en español rioplatense."
     )
 
-    # Habilitamos Google Search Grounding para que la IA pueda buscar información en la web si hace falta
     payload = {
         "system_instruction": {"parts": [{"text": instrucciones}]},
         "contents": [{"parts": partes_contenido}],
@@ -214,7 +213,7 @@ def extraer_y_aprender(chat_id, texto_usuario):
             f"Analiza el texto del usuario: '{texto_usuario}'.\n"
             f"1. Si menciona fechas importantes, cumpleaños, citas, turnos, asados o eventos a recordar, responde en JSON con 'tipo': 'recordatorio' y los campos: evento, fecha_evento, antelacion.\n"
             f"2. Si es un estudio clínico, responde en JSON con 'tipo': 'medico' y los campos: tipo_estudio, resumen, valores_clave, observaciones.\n"
-            f"3. Si es medicación, hábito, dato personal o preferencia, responde en JSON com 'tipo': 'recuerdo' y el campo 'texto'.\n"
+            f"3. Si es medicación, hábito, dato personal o preferencia, responde en JSON con 'tipo': 'recuerdo' y el campo 'texto'.\n"
             f"4. Si NO hay nada que guardar, responde exactamente la palabra NADA."
         )
         payload = {"contents": [{"parts": [{"text": prompt_extraccion}]}]}
@@ -341,7 +340,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa, proactiva y conectada a la web...")
+    print("Lúthien activa y proactiva...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
