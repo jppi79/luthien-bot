@@ -1,10 +1,10 @@
 import os
 import json
 import base64
+import urllib.request
 import psycopg2
 import logging
 import threading
-import requests
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime
 import edge_tts
@@ -107,7 +107,7 @@ def guardar_recuerdo(texto):
         cursor.close()
         conn.close()
     except Exception as e:
-        print(f"Error guardando recuerdo: {e}")
+        pass
 
 def guardar_cata(cepa, ef_pos, ef_neg, sedacion, bajon, paranoia, notas):
     if not DATABASE_URL:
@@ -123,7 +123,7 @@ def guardar_cata(cepa, ef_pos, ef_neg, sedacion, bajon, paranoia, notas):
         cursor.close()
         conn.close()
     except Exception as e:
-        print(f"Error guardando cata: {e}")
+        pass
 
 def guardar_registro_medico(tipo, resumen, valores, observaciones):
     if not DATABASE_URL:
@@ -139,11 +139,11 @@ def guardar_registro_medico(tipo, resumen, valores, observaciones):
         cursor.close()
         conn.close()
     except Exception as e:
-        print(f"Error guardando registro médico: {e}")
+        pass
 
 def obtener_memoria_y_registros():
     if not DATABASE_URL:
-        return "Sin conexión a base de datos."
+        return "Sin conexión a BD."
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
@@ -170,49 +170,13 @@ def obtener_memoria_y_registros():
 
 # --------------------------------------------------------------------
 
-# --- FUNCIÓN CON INTEGRACIÓN AL SERVICIO METEOROLÓGICO NACIONAL (SMN) ---
+# --- FUNCIÓN ORIGINAL ROBUSTA DE CLIMA ---
 def obtener_clima_actual():
-    # Open-Meteo exige que los bots se identifiquen con su propio nombre, no como navegadores
-    headers = {'User-Agent': 'LuthienBot/1.0'}
-    
-    # Intento 1: API Servicio Meteorológico Nacional (SMN)
-    try:
-        url_smn = "https://smn-api.vercel.app/api/v1/weather/latest" 
-        res = requests.get(url_smn, headers=headers, timeout=5)
-        if res.status_code == 200:
-            datos_smn = res.json()
-            estacion = next((item for item in datos_smn if "Marcos Juárez" in item.get('name', '') or "Marcos Juarez" in item.get('name', '')), None)
-            if estacion:
-                temp = estacion.get('weather', {}).get('temp')
-                st = estacion.get('weather', {}).get('st')
-                hum = estacion.get('weather', {}).get('humidity')
-                desc = estacion.get('weather', {}).get('description')
-                st_texto = f" (ST {st}°C)" if st is not None else ""
-                
-                # Obtener pronóstico de Open-Meteo para complementar los días siguientes
-                pronostico = ""
-                try:
-                    url_om = "https://api.open-meteo.com/v1/forecast?latitude=-32.6997&longitude=-62.1028&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Argentina/Cordoba"
-                    res_om = requests.get(url_om, headers=headers, timeout=4)
-                    if res_om.status_code == 200:
-                        daily = res_om.json().get('daily', {})
-                        maxs = daily.get('temperature_2m_max', [])
-                        mins = daily.get('temperature_2m_min', [])
-                        lluvia = daily.get('precipitation_probability_max', [])
-                        pronostico = f" Pronóstico próximos 3 días - Máximas: {maxs[:3]}°C, Mínimas: {mins[:3]}°C, Lluvia prob: {lluvia[:3]}%."
-                except Exception:
-                    pass
-
-                return f"DATOS OFICIALES SMN MARCOS JUÁREZ: Estado: {desc}, Temp: {temp}°C{st_texto}, Humedad: {hum}%.{pronostico}"
-    except Exception as e:
-        print(f"Error con SMN: {e}")
-
-    # Intento 2: Open-Meteo (Respaldo directo)
     try:
         url_clima = "https://api.open-meteo.com/v1/forecast?latitude=-32.6997&longitude=-62.1028&current=temperature_2m,relative_humidity_2m,apparent_temperature&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Argentina/Cordoba"
-        res = requests.get(url_clima, headers=headers, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
+        req = urllib.request.Request(url_clima, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode('utf-8'))
             current = data.get('current', {})
             daily = data.get('daily', {})
 
@@ -223,11 +187,9 @@ def obtener_clima_actual():
             mins = daily.get('temperature_2m_min', [])
             lluvia = daily.get('precipitation_probability_max', [])
 
-            return f"DATOS CLIMA MARCOS JUÁREZ: Actual: {temp}°C (ST {sensacion}°C, Humedad {humedad}%). Pronóstico 3 días - Máximas: {maxs[:3]}°C, Mínimas: {mins[:3]}°C, Lluvia prob: {lluvia[:3]}%."
+            return f"CLIMA EN MARCOS JUÁREZ: Actual: {temp}°C (ST {sensacion}°C, Humedad {humedad}%). Pronóstico próximos 3 días - Máximas: {maxs[:3]}°C, Mínimas: {mins[:3]}°C, Lluvia prob: {lluvia[:3]}%."
     except Exception as e:
-        print(f"Error con Open-Meteo: {e}")
-
-    return "Servicios de clima no disponibles en este momento."
+        return "Datos de clima no disponibles temporalmente."
 
 # --------------------------------------------------------------------
 
@@ -252,7 +214,7 @@ def consultar_gemini(partes_contenido):
         f"- Fecha y hora actual: {ahora}\n"
         f"- Estado del clima: {clima_actual}\n"
         f"- Base de memoria y registros:\n{memoria_actual}\n\n"
-        f"REGLA DE INTERPRETACIÓN: Tenés siempre a disposición la información del clima actual y pronóstico. Si el usuario pregunta de cualquier forma directa o implícita sobre la temperatura, el pronóstico, si va a llover, si hace frío/calor, o cómo estará mañana, respondé usando los datos de clima del contexto sin decir que no los tenés.\n"
+        f"REGLA DE INTERPRETACIÓN: Tenés siempre a disposición la información del clima actual y pronóstico. Si el usuario pregunta de cualquier forma directa o implícita sobre la temperatura, el pronóstico, si va a llover o cómo estará mañana, respondé usando los datos de clima del contexto.\n"
         f"REGLA CRÍTICA PARA AUDIOS: Al responder con notas de voz, comenzá siempre con una breve introducción natural y conversacional, seguida directamente de la respuesta. "
         f"PROHIBIDO recitar, enumerar o hacer alarde de los datos de su vida. "
         f"Regla estricta: NO repitas su nombre bajo ninguna circunstancia. "
@@ -264,10 +226,13 @@ def consultar_gemini(partes_contenido):
         "contents": [{"parts": partes_contenido}]
     }
 
+    data = json.dumps(payload).encode('utf-8')
     headers = {"Content-Type": "application/json"}
-    res = requests.post(url, data=json.dumps(payload), headers=headers, timeout=10)
-    datos = res.json()
-    return datos['candidates'][0]['content']['parts'][0]['text']
+
+    req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+    with urllib.request.urlopen(req, timeout=10) as response:
+        datos = json.loads(response.read().decode('utf-8'))
+        return datos['candidates'][0]['content']['parts'][0]['text']
 
 def extraer_y_aprender(texto_usuario):
     try:
@@ -280,40 +245,42 @@ def extraer_y_aprender(texto_usuario):
             f"4. Si NO hay nada que guardar, responde exactamente la palabra NADA."
         )
         payload = {"contents": [{"parts": [{"text": prompt_extraccion}]}]}
-        res = requests.post(url, data=json.dumps(payload), headers={"Content-Type": "application/json"}, timeout=10)
-        datos = res.json()
-        resultado = datos['candidates'][0]['content']['parts'][0]['text'].strip()
-        
-        if "NADA" not in resultado.upper():
-            try:
-                inicio = resultado.find('{')
-                fin = resultado.rfind('}') + 1
-                if inicio != -1 and fin != -1:
-                    parsed = json.loads(resultado[inicio:fin])
-                    tipo = parsed.get("tipo")
-                    if tipo == "cata":
-                        guardar_cata(
-                            parsed.get("cepa", "Desconocida"),
-                            parsed.get("efectos_positivos", ""),
-                            parsed.get("efectos_negativos", ""),
-                            str(parsed.get("sedacion", "")),
-                            str(parsed.get("bajon", "")),
-                            str(parsed.get("paranoia", "")),
-                            parsed.get("notas", "")
-                        )
-                    elif tipo == "medico":
-                        guardar_registro_medico(
-                            parsed.get("tipo_estudio", "Consulta/Síntoma"),
-                            parsed.get("resumen", ""),
-                            parsed.get("valores_clave", ""),
-                            parsed.get("observaciones", "")
-                        )
-                    elif tipo == "recuerdo":
-                        guardar_recuerdo(parsed.get("texto", resultado))
-                else:
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method='POST')
+        with urllib.request.urlopen(req, timeout=10) as response:
+            datos = json.loads(response.read().decode('utf-8'))
+            resultado = datos['candidates'][0]['content']['parts'][0]['text'].strip()
+            
+            if "NADA" not in resultado.upper():
+                try:
+                    inicio = resultado.find('{')
+                    fin = resultado.rfind('}') + 1
+                    if inicio != -1 and fin != -1:
+                        parsed = json.loads(resultado[inicio:fin])
+                        tipo = parsed.get("tipo")
+                        if tipo == "cata":
+                            guardar_cata(
+                                parsed.get("cepa", "Desconocida"),
+                                parsed.get("efectos_positivos", ""),
+                                parsed.get("efectos_negativos", ""),
+                                str(parsed.get("sedacion", "")),
+                                str(parsed.get("bajon", "")),
+                                str(parsed.get("paranoia", "")),
+                                parsed.get("notas", "")
+                            )
+                        elif tipo == "medico":
+                            guardar_registro_medico(
+                                parsed.get("tipo_estudio", "Consulta/Síntoma"),
+                                parsed.get("resumen", ""),
+                                parsed.get("valores_clave", ""),
+                                parsed.get("observaciones", "")
+                            )
+                        elif tipo == "recuerdo":
+                            guardar_recuerdo(parsed.get("texto", resultado))
+                    else:
+                        guardar_recuerdo(resultado)
+                except Exception:
                     guardar_recuerdo(resultado)
-            except Exception:
-                guardar_recuerdo(resultado)
     except Exception as e:
         pass
 
@@ -426,7 +393,7 @@ def main():
     app.add_handler(MessageHandler(filters.VOICE, procesar_audio))
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien con historial médico, catas, voz, visión y SMN activa...")
+    print("Lúthien activa con clima nativo (Open-Meteo), BD y memoria...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
