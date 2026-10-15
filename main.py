@@ -154,7 +154,6 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 
 def consultar_gemini(partes_contenido):
     try:
-        # Usamos el modelo correcto y estable gemini-1.5-flash
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
         ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M")
         base_conocimiento = obtener_contexto_completo()
@@ -336,7 +335,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa y conectada con gemini-1.5-flash...")
+    print("Lúthien activa con endpoint corregido...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
