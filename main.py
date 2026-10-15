@@ -12,7 +12,7 @@ import edge_tts
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# --- SERVIDOR FANTASMA ROBUSTO PARA MANTENER ACTIVO EN RENDER/WEB ---
+# --- SERVIDOR FANTASMA PARA MANTENER ACTIVO EN RENDER/WEB ---
 class KeepAliveHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -45,7 +45,6 @@ def inicializar_db():
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         
-        # Tabla de memoria general
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS memoria (
                 id SERIAL PRIMARY KEY,
@@ -54,7 +53,6 @@ def inicializar_db():
             )
         """)
         
-        # Tabla de catas de cannabis
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS catas_cannabis (
                 id SERIAL PRIMARY KEY,
@@ -69,7 +67,6 @@ def inicializar_db():
             )
         """)
         
-        # Tabla de diario de hábitos y acontecimientos
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS diario_habitos (
                 id SERIAL PRIMARY KEY,
@@ -79,7 +76,6 @@ def inicializar_db():
             )
         """)
         
-        # Tabla de historial médico y análisis de estudios
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS historial_medico (
                 id SERIAL PRIMARY KEY,
@@ -94,7 +90,6 @@ def inicializar_db():
         conn.commit()
         cursor.close()
         conn.close()
-        print("Base de datos e historial medico/catas inicializados correctamente.")
     except Exception as e:
         print(f"Error inicializando la base de datos: {e}")
 
@@ -168,7 +163,7 @@ def obtener_memoria_y_registros():
         
         texto_memoria = "RECUERDOS GENERALES:\n" + ("\n".join([f"- {r[0]}" for r in recuerdos]) if recuerdos else "Ninguno")
         texto_catas = "\n\nÚLTIMAS CATAS:\n" + ("\n".join([f"- {c[0]}: {c[1]} (Sedación: {c[2]})" for c in catas]) if catas else "Ninguna")
-        texto_medico = "\n\nHISTORIAL MÉDICO RECIENTE:\n" + ("\n".join([f"- {m[0]}: {m[1]}" for m[m] in medicos]) if medicos else "Ninguno")
+        texto_medico = "\n\nHISTORIAL MÉDICO RECIENTE:\n" + ("\n".join([f"- {m[0]}: {m[1]}" for m[0] in medicos]) if medicos else "Ninguno")
         
         return f"{texto_memoria}{texto_catas}{texto_medico}"
     except Exception as e:
@@ -193,9 +188,9 @@ def obtener_clima_actual():
             mins = daily.get('temperature_2m_min', [])
             lluvia = daily.get('precipitation_probability_max', [])
 
-            return f"Clima actual en Marcos Juárez: Temperatura {temp}°C (Sensación térmica {sensacion}°C, Humedad {humedad}%). Pronóstico próximos días - Máximas: {maxs[:3]}°C, Mínimas: {mins[:3]}°C, Probabilidad de lluvia: {lluvia[:3]}%."
+            return f"DATOS DE CLIMA EN MARCOS JUÁREZ: Actual: {temp}°C (Sensación térmica {sensacion}°C, Humedad {humedad}%). Pronóstico próximos 3 días - Máximas: {maxs[:3]}°C, Mínimas: {mins[:3]}°C, Lluvia prob: {lluvia[:3]}%."
     except Exception as e:
-        return "No se pudo obtener el clima en este momento."
+        return "Clima no disponible en este momento."
 
 # --------------------------------------------------------------------
 
@@ -206,22 +201,25 @@ logging.getLogger("telegram").setLevel(logging.WARNING)
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
-def consultar_gemini(partes_contenido, extra_contexto=""):
+def consultar_gemini(partes_contenido):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={GEMINI_KEY}"
     ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M")
     memoria_actual = obtener_memoria_y_registros()
+    clima_actual = obtener_clima_actual()
 
     instrucciones = (
         f"Sos Lúthien, la asistente virtual de tu creador. "
         f"Datos base inalterables: vive en Marcos Juárez, Córdoba, Argentina. Trabaja como analista de procesos en producción en Bertotto Boglione S.A. "
         f"PROHIBIDO inventar datos personales, ciudades o mascotas. "
-        f"Tenés acceso a esta base de conocimientos y registros en segundo plano:\n{memoria_actual}\n\n"
-        f"{extra_contexto}\n"
-        f"Capacidades activas: Análisis de estudios médicos/imágenes, registro de catas de cannabis y diario de hábitos. "
+        f"CONTEXTO EN TIEMPO REAL:\n"
+        f"- Fecha y hora actual: {ahora}\n"
+        f"- Estado del clima: {clima_actual}\n"
+        f"- Base de memoria y registros:\n{memoria_actual}\n\n"
+        f"REGLA DE INTERPRETACIÓN: Tenés siempre a disposición la información del clima actual y pronóstico. Si el usuario pregunta de cualquier forma directa o implícita sobre la temperatura, el pronóstico, si va a llover, si hace frío/calor, o cómo estará mañana, respondé usando los datos de clima del contexto sin decir que no los tenés.\n"
         f"REGLA CRÍTICA PARA AUDIOS: Al responder con notas de voz, comenzá siempre con una breve introducción natural y conversacional, seguida directamente de la respuesta. "
         f"PROHIBIDO recitar, enumerar o hacer alarde de los datos de su vida. "
         f"Regla estricta: NO repitas su nombre bajo ninguna circunstancia. "
-        f"Respondé en español rioplatense, de forma directa y cálida. Contexto temporal actual: Hoy es {ahora}."
+        f"Respondé en español rioplatense, de forma directa y cálida."
     )
 
     payload = {
@@ -255,7 +253,6 @@ def extraer_y_aprender(texto_usuario):
             resultado = datos['candidates'][0]['content']['parts'][0]['text'].strip()
             
             if "NADA" not in resultado.upper():
-                # Intentar parsear JSON si la respuesta vino estructurada
                 try:
                     inicio = resultado.find('{')
                     fin = resultado.rfind('}') + 1
@@ -316,14 +313,10 @@ async def procesar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Entendido. Ya lo guardé en mi memoria.")
         return
 
-    extra_contexto = ""
-    if "clima" in texto_lower or "tiempo" in texto_lower or "lluvia" in texto_lower or "temperatura" in texto_lower or "pronóstico" in texto_lower:
-        extra_contexto = obtener_clima_actual()
-
     quiere_audio = any(palabra in texto_lower for palabra in ["audio", "voz", "mandámelo en audio", "respondeme en audio", "mandame un audio"])
 
     try:
-        respuesta_ia = consultar_gemini([{"text": texto_usuario}], extra_contexto)
+        respuesta_ia = consultar_gemini([{"text": texto_usuario}])
 
         if quiere_audio:
             audio_path = await generar_audio_respuesta(respuesta_ia)
@@ -354,12 +347,11 @@ async def procesar_imagen(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         partes = [
             {"inline_data": {"mime_type": "image/jpeg", "data": img_base64}},
-            {"text": f"El usuario envió una imagen con este mensaje: '{caption}'. Si es un análisis médico, receta o informe, analizá los valores, diagnostico y conclusiones principales, y aclarale que los guardaste en su historial."}
+            {"text": f"El usuario envió una imagen con este mensaje: '{caption}'. Si es un análisis médico, receta o informe, analizá los valores, diagnóstico y conclusiones principales."}
         ]
 
         respuesta_ia = consultar_gemini(partes)
 
-        # Extraer automáticamente los datos del estudio en segundo plano
         prompt_medico = f"Imagen analizada. Mensaje: '{caption}'. Respuesta IA: '{respuesta_ia}'. Extraé el estudio médico si aplica."
         threading.Thread(target=extraer_y_aprender, args=(prompt_medico,), daemon=True).start()
 
@@ -383,8 +375,7 @@ async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             {"text": "Escuchá esta nota de voz y respondé de manera natural a lo solicitado."}
         ]
 
-        clima_info = obtener_clima_actual()
-        respuesta_ia = consultar_gemini(partes, clima_info)
+        respuesta_ia = consultar_gemini(partes)
 
         audio_path = await generar_audio_respuesta(respuesta_ia)
         with open(audio_path, 'rb') as audio_file:
@@ -403,7 +394,7 @@ def main():
     app.add_handler(MessageHandler(filters.VOICE, procesar_audio))
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien con historial médico, catas, voz, visión y Supabase activa...")
+    print("Lúthien con historial médico, catas, voz, visión y clima nativo activa...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
