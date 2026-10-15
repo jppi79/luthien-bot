@@ -4,12 +4,12 @@ import base64
 import psycopg2
 import logging
 import threading
-import requests
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, date
 import edge_tts
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import google.generativeai as genai
 
 # --- SERVIDOR FANTASMA PARA MANTENER ACTIVO EN RENDER/WEB ---
 class KeepAliveHandler(BaseHTTPRequestHandler):
@@ -35,6 +35,9 @@ threading.Thread(target=run_keep_alive, daemon=True).start()
 DATABASE_URL = os.environ.get("DATABASE_URL")
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+
+if GEMINI_KEY:
+    genai.configure(api_key=GEMINI_KEY)
 
 def inicializar_db():
     if not DATABASE_URL:
@@ -68,7 +71,7 @@ def verificar_saludo_hoy():
             cursor.execute("INSERT INTO control_sesion (ultimo_saludo) VALUES (%s)", (hoy,))
             conn.commit()
             cursor.close()
-            cursor.close()
+            conn.close()
             return True
         cursor.close()
         conn.close()
@@ -87,7 +90,7 @@ def guardar_recuerdo(texto):
             cursor.execute("INSERT INTO memoria (recuerdo) VALUES (%s)", (texto.strip(),))
             conn.commit()
         cursor.close()
-        cursor.close()
+        conn.close()
     except Exception as e:
         pass
 
@@ -100,7 +103,7 @@ def guardar_registro_medico(tipo, resumen, valores, observaciones):
         cursor.execute("INSERT INTO historial_medico (tipo_estudio, resumen_diagnostico, valores_clave, observaciones) VALUES (%s, %s, %s, %s)", (tipo, resumen, valores, observaciones))
         conn.commit()
         cursor.close()
-        cursor.close()
+        conn.close()
     except Exception as e:
         pass
 
@@ -132,6 +135,7 @@ def obtener_contexto_completo():
 
 def obtener_clima_actual():
     try:
+        import requests
         url = "https://api.open-meteo.com/v1/forecast?latitude=-32.6997&longitude=-62.1028&current=temperature_2m,relative_humidity_2m,apparent_temperature&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Argentina/Cordoba"
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
         if r.status_code == 200:
@@ -152,9 +156,8 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
-def consultar_gemini(partes_contenido):
+def consultar_gemini(contenido_prompt):
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
         ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M")
         base_conocimiento = obtener_contexto_completo()
         clima_actual = obtener_clima_actual()
@@ -182,23 +185,18 @@ def consultar_gemini(partes_contenido):
             f"4. Regla estricta: NO repitas su nombre bajo ninguna circunstancia. Respondé en español rioplatense."
         )
 
-        payload = {
-            "system_instruction": {"parts": [{"text": instrucciones}]},
-            "contents": [{"parts": partes_contenido}]
-        }
-
-        headers = {"Content-Type": "application/json"}
-        r = requests.post(url, json=payload, headers=headers, timeout=30)
-        if r.status_code == 200:
-            datos = r.json()
-            return datos['candidates'][0]['content']['parts'][0]['text']
-        return f"Error en API de IA (Código {r.status_code})."
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=instrucciones
+        )
+        response = model.generate_content(contenido_prompt)
+        return response.text
     except Exception as e:
         return f"Error de conexión con IA: {str(e)}"
 
 def extraer_y_aprender(chat_id, texto_usuario):
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+        model = genai.GenerativeModel("gemini-1.5-flash")
         prompt_extraccion = (
             f"Analiza el texto del usuario: '{texto_usuario}'.\n"
             f"1. Si menciona fechas importantes, cumpleaños, citas, turnos, asados o eventos a recordar, responde en JSON con 'tipo': 'recordatorio' y los campos: evento, fecha_evento, antelacion.\n"
@@ -206,32 +204,25 @@ def extraer_y_aprender(chat_id, texto_usuario):
             f"3. Si es medicación, hábito, dato personal o preferencia, responde en JSON con 'tipo': 'recuerdo' y el campo 'texto'.\n"
             f"4. Si NO hay nada que guardar, responde exactamente la palabra NADA."
         )
-        payload = {"contents": [{"parts": [{"text": prompt_extraccion}]}]}
-        r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
-        datos = r.json()
-        resultado = datos['candidates'][0]['content']['parts'][0]['text'].strip()
+        response = model.generate_content(prompt_extraccion)
+        resultado = response.text.strip()
         
         if "NADA" not in resultado.upper():
-            try:
-                inicio = resultado.find('{')
-                fin = resultado.rfind('}') + 1
-                if inicio != -1 and fin != -1:
-                    parsed = json.loads(resultado[inicio:fin])
-                    tipo = parsed.get("tipo")
-                    if tipo == "recordatorio":
-                        pass
-                    elif tipo == "medico":
-                        guardar_registro_medico(
-                            parsed.get("tipo_estudio", "Estudio clínico"),
-                            parsed.get("resumen", ""),
-                            parsed.get("valores_clave", ""),
-                            parsed.get("observaciones", "")
-                        )
-                    elif tipo == "recuerdo":
-                        guardar_recuerdo(parsed.get("texto", resultado))
-                else:
-                    guardar_recuerdo(resultado)
-            except Exception:
+            inicio = resultado.find('{')
+            fin = resultado.rfind('}') + 1
+            if inicio != -1 and fin != -1:
+                parsed = json.loads(resultado[inicio:fin])
+                tipo = parsed.get("tipo")
+                if tipo == "medico":
+                    guardar_registro_medico(
+                        parsed.get("tipo_estudio", "Estudio clínico"),
+                        parsed.get("resumen", ""),
+                        parsed.get("valores_clave", ""),
+                        parsed.get("observaciones", "")
+                    )
+                elif tipo == "recuerdo":
+                    guardar_recuerdo(parsed.get("texto", resultado))
+            else:
                 guardar_recuerdo(resultado)
     except Exception as e:
         pass
@@ -261,7 +252,7 @@ async def procesar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     quiere_audio = any(p in texto_lower for p in ["audio", "voz", "mandámelo en audio"])
     
     try:
-        respuesta_ia = consultar_gemini([{"text": texto_usuario}])
+        respuesta_ia = consultar_gemini(texto_usuario)
         if quiere_audio:
             audio_path = await generar_audio_respuesta(respuesta_ia)
             if audio_path and os.path.exists(audio_path):
@@ -283,14 +274,15 @@ async def procesar_imagen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         foto = update.message.photo[-1]
         file = await foto.get_file()
         img_bytes = await file.download_as_bytearray()
-        img_base64 = base64.b64encode(img_bytes).decode('utf-8')
         caption = update.message.caption or "Analizá esta imagen."
-        partes = [{"inline_data": {"mime_type": "image/jpeg", "data": img_base64}}, {"text": caption}]
-        respuesta_ia = consultar_gemini(partes)
+        
+        # Procesamiento multimedia con SDK oficial
+        imagen_parte = {"mime_type": "image/jpeg", "data": bytes(img_bytes)}
+        respuesta_ia = consultar_gemini([caption, imagen_parte])
         threading.Thread(target=extraer_y_aprender, args=(chat_id, f"Imagen: {caption}. {respuesta_ia}",), daemon=True).start()
         await update.message.reply_text(respuesta_ia)
     except Exception as e:
-        pass
+        await update.message.reply_text("Error al procesar la imagen.")
 
 async def procesar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -299,14 +291,14 @@ async def procesar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE)
         doc = update.message.document
         file = await doc.get_file()
         doc_bytes = await file.download_as_bytearray()
-        doc_base64 = base64.b64encode(doc_bytes).decode('utf-8')
         caption = update.message.caption or "Analizá este documento."
-        partes = [{"inline_data": {"mime_type": doc.mime_type or "application/pdf", "data": doc_base64}}, {"text": caption}]
-        respuesta_ia = consultar_gemini(partes)
+        
+        doc_parte = {"mime_type": doc.mime_type or "application/pdf", "data": bytes(doc_bytes)}
+        respuesta_ia = consultar_gemini([caption, doc_parte])
         threading.Thread(target=extraer_y_aprender, args=(chat_id, f"PDF {doc.file_name}: {caption}. {respuesta_ia}",), daemon=True).start()
         await update.message.reply_text(respuesta_ia)
     except Exception as e:
-        pass
+        await update.message.reply_text("Error al procesar el documento.")
 
 async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -314,9 +306,9 @@ async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         file = await update.message.voice.get_file()
         audio_bytes = await file.download_as_bytearray()
-        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-        partes = [{"inline_data": {"mime_type": "audio/ogg", "data": audio_base64}}, {"text": "Respondé a la nota de voz."}]
-        respuesta_ia = consultar_gemini(partes)
+        
+        audio_parte = {"mime_type": "audio/ogg", "data": bytes(audio_bytes)}
+        respuesta_ia = consultar_gemini(["Respondé a la nota de voz.", audio_parte])
         audio_path = await generar_audio_respuesta(respuesta_ia)
         if audio_path and os.path.exists(audio_path):
             with open(audio_path, 'rb') as audio_file:
@@ -326,7 +318,7 @@ async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(respuesta_ia)
     except Exception as e:
-        pass
+        await update.message.reply_text("Error al procesar la nota de voz.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -335,7 +327,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa con endpoint corregido...")
+    print("Lúthien activa con SDK oficial de Google...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
