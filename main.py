@@ -16,9 +16,9 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 class KeepAliveHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
+        self.send_header('Content-type', 'text/html; charset=utf-8')
         self.end_headers()
-        self.wfile.write(b"Luthien esta viva y activa")
+        self.wfile.write(b"<html><body><h1>Luthien OK</h1></body></html>")
     def log_message(self, format, *args):
         pass
 
