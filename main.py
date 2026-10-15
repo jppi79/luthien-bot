@@ -188,13 +188,14 @@ def consultar_gemini(partes_contenido):
         }
 
         headers = {"Content-Type": "application/json"}
-        r = requests.post(url, json=payload, headers=headers, timeout=15)
+        # Aumentamos el timeout a 30 segundos para evitar cortes por latencia
+        r = requests.post(url, json=payload, headers=headers, timeout=30)
         if r.status_code == 200:
             datos = r.json()
             return datos['candidates'][0]['content']['parts'][0]['text']
-        return "Demora conectando con el motor de IA."
+        return f"Error en API de IA (Código {r.status_code})."
     except Exception as e:
-        return "Error temporal al consultar el servidor."
+        return f"Error de conexión con IA: {str(e)}"
 
 def extraer_y_aprender(chat_id, texto_usuario):
     try:
@@ -207,7 +208,7 @@ def extraer_y_aprender(chat_id, texto_usuario):
             f"4. Si NO hay nada que guardar, responde exactamente la palabra NADA."
         )
         payload = {"contents": [{"parts": [{"text": prompt_extraccion}]}]}
-        r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
+        r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
         datos = r.json()
         resultado = datos['candidates'][0]['content']['parts'][0]['text'].strip()
         
@@ -335,7 +336,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa y protegida contra errores...")
+    print("Lúthien activa y conectada...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
