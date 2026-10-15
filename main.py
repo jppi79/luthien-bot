@@ -38,7 +38,7 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
 client = genai.Client(api_key=GEMINI_KEY) if GEMINI_KEY else None
-MODELO_ACTIVO = "gemini-2.5-flash"
+MODELO_ACTIVO = "gemini-3.8-flash"
 
 def inicializar_db():
     if not DATABASE_URL:
