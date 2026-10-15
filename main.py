@@ -25,75 +25,25 @@ def run_keep_alive():
     try:
         port = int(os.environ.get("PORT", 8080))
         server = HTTPServer(('0.0.0.0', port), KeepAliveHandler)
-        print(f"Servidor web activo en puerto {port}")
         server.serve_forever()
     except Exception as e:
-        print(f"Error en servidor keep-alive: {e}")
+        pass
 
 threading.Thread(target=run_keep_alive, daemon=True).start()
 # --------------------------------------------------------
 
-# --- CONFIGURACIÓN DE BASE DE DATOS POSTGRESQL (SUPABASE) ---
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def inicializar_db():
     if not DATABASE_URL:
-        print("Advertencia: No se encontró DATABASE_URL.")
         return
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS memoria (
-                id SERIAL PRIMARY KEY,
-                recuerdo TEXT NOT NULL,
-                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS catas_cannabis (
-                id SERIAL PRIMARY KEY,
-                cepa TEXT NOT NULL,
-                efectos_positivos TEXT,
-                efectos_negativos TEXT,
-                nivel_sedacion TEXT,
-                nivel_bajon TEXT,
-                nivel_paranoia TEXT,
-                notas TEXT,
-                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS diario_habitos (
-                id SERIAL PRIMARY KEY,
-                categoria TEXT NOT NULL,
-                detalle TEXT NOT NULL,
-                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS historial_medico (
-                id SERIAL PRIMARY KEY,
-                tipo_estudio TEXT NOT NULL,
-                resumen_diagnostico TEXT NOT NULL,
-                valores_clave TEXT,
-                observaciones TEXT,
-                fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Tabla para control de interacciones diarias (para el saludo)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS control_sesion (
-                id SERIAL PRIMARY KEY,
-                ultimo_saludo DATE UNIQUE
-            )
-        """)
-        
+        cursor.execute("CREATE TABLE IF NOT EXISTS memoria (id SERIAL PRIMARY KEY, recuerdo TEXT NOT NULL, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS catas_cannabis (id SERIAL PRIMARY KEY, cepa TEXT NOT NULL, efectos_positivos TEXT, efectos_negativos TEXT, nivel_sedacion TEXT, nivel_bajon TEXT, nivel_paranoia TEXT, notas TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS historial_medico (id SERIAL PRIMARY KEY, tipo_estudio TEXT NOT NULL, resumen_diagnostico TEXT NOT NULL, valores_clave TEXT, observaciones TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS control_sesion (id SERIAL PRIMARY KEY, ultimo_saludo DATE UNIQUE)")
         conn.commit()
         cursor.close()
         conn.close()
@@ -110,18 +60,16 @@ def verificar_saludo_hoy():
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         cursor.execute("SELECT ultimo_saludo FROM control_sesion WHERE ultimo_saludo = %s", (hoy,))
-        resultado = cursor.fetchone()
-        if not resultado:
-            # Registrar el saludo de hoy
-            cursor.execute("DELETE FROM control_sesion") # Mantener solo la fecha actual
+        if not cursor.fetchone():
+            cursor.execute("DELETE FROM control_sesion")
             cursor.execute("INSERT INTO control_sesion (ultimo_saludo) VALUES (%s)", (hoy,))
             conn.commit()
             cursor.close()
             conn.close()
-            return True # Es el primer mensaje del día
+            return True
         cursor.close()
         conn.close()
-        return False # Ya saludó hoy
+        return False
     except Exception as e:
         return False
 
@@ -140,68 +88,42 @@ def guardar_recuerdo(texto):
     except Exception as e:
         pass
 
-def guardar_cata(cepa, ef_pos, ef_neg, sedacion, bajon, paranoia, notas):
-    if not DATABASE_URL:
-        return
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO catas_cannabis (cepa, efectos_positivos, efectos_negativos, nivel_sedacion, nivel_bajon, nivel_paranoia, notas)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (cepa, ef_pos, ef_neg, sedacion, bajon, paranoia, notas))
-        conn.commit()
-        cursor.close()
-        conn.close()
-    except Exception as e:
-        pass
-
 def guardar_registro_medico(tipo, resumen, valores, observaciones):
     if not DATABASE_URL:
         return
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO historial_medico (tipo_estudio, resumen_diagnostico, valores_clave, observaciones)
-            VALUES (%s, %s, %s, %s)
-        """, (tipo, resumen, valores, observaciones))
+        cursor.execute("INSERT INTO historial_medico (tipo_estudio, resumen_diagnostico, valores_clave, observaciones) VALUES (%s, %s, %s, %s)", (tipo, resumen, valores, observaciones))
         conn.commit()
         cursor.close()
         conn.close()
     except Exception as e:
         pass
 
-def obtener_memoria_y_registros():
+def obtener_contexto_completo():
     if not DATABASE_URL:
         return "Sin conexión a BD."
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT recuerdo FROM memoria ORDER BY fecha DESC LIMIT 15")
-        recuerdos = cursor.fetchall()
+        cursor.execute("SELECT recuerdo FROM memoria ORDER BY fecha DESC LIMIT 30")
+        recuerdos = [r[0] for r in cursor.fetchall()]
         
-        cursor.execute("SELECT cepa, efectos_positivos, nivel_sedacion, fecha FROM catas_cannabis ORDER BY fecha DESC LIMIT 5")
-        catas = cursor.fetchall()
-        
-        cursor.execute("SELECT tipo_estudio, resumen_diagnostico, fecha FROM historial_medico ORDER BY fecha DESC LIMIT 5")
-        medicos = cursor.fetchall()
+        cursor.execute("SELECT tipo_estudio, resumen_diagnostico, valores_clave, observaciones FROM historial_medico ORDER BY fecha DESC LIMIT 10")
+        medicos = [f"Estudio: {m[0]} | Resumen: {m[1]} | Valores: {m[2]} | Obs: {m[3]}" for m in cursor.fetchall()]
         
         cursor.close()
         conn.close()
         
-        texto_memoria = "RECUERDOS GENERALES:\n" + ("\n".join([f"- {r[0]}" for r in recuerdos]) if recuerdos else "Ninguno")
-        texto_catas = "\n\nÚLTIMAS CATAS:\n" + ("\n".join([f"- {c[0]}: {c[1]} (Sedación: {c[2]})" for c in catas]) if catas else "Ninguna")
-        texto_medico = "\n\nHISTORIAL MÉDICO RECIENTE:\n" + ("\n".join([f"- {m[0]}: {m[1]}" for m in medicos]) if medicos else "Ninguno")
+        t_recuerdos = "REGISTROS Y RECUERDOS GENERALES (Medicamentos y notas):\n" + ("\n".join([f"- {r}" for r in recuerdos]) if recuerdos else "Ninguno")
+        t_medicos = "\n\nHISTORIAL MÉDICO OFICIAL (Estudios y laboratorios):\n" + ("\n".join([f"- {m}" for m in medicos]) if medicos else "Ninguno registrado.")
         
-        return f"{texto_memoria}{texto_catas}{texto_medico}"
+        return f"{t_recuerdos}\n\n{t_medicos}"
     except Exception as e:
-        return "No se pudieron obtener registros previos."
+        return "No se pudieron obtener registros."
 
-# --------------------------------------------------------------------
-
-# --- FUNCIÓN DE CLIMA ULTRA RESISTENTE ---
 def obtener_clima_actual():
     try:
         url = "https://api.open-meteo.com/v1/forecast?latitude=-32.6997&longitude=-62.1028&current=temperature_2m,relative_humidity_2m,apparent_temperature&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Argentina/Cordoba"
@@ -215,24 +137,10 @@ def obtener_clima_actual():
             h = curr.get("relative_humidity_2m")
             maxs = daily.get("temperature_2m_max", [])
             mins = daily.get("temperature_2m_min", [])
-            lluvia = daily.get("precipitation_probability_max", [])
-            return f"CLIMA MARCOS JUÁREZ: Temp actual {t}°C (ST {st}°C, Humedad {h}%). Pronóstico 3 días - Máximas: {maxs[:3]}°C, Mínimas: {mins[:3]}°C, Lluvia prob: {lluvia[:3]}%."
+            return f"CLIMA MARCOS JUÁREZ: Temp actual {t}°C (ST {st}°C, Humedad {h}%). Pronóstico - Máximas: {maxs[:3]}°C, Mínimas: {mins[:3]}°C."
     except Exception:
         pass
-
-    try:
-        r2 = requests.get("https://wttr.in/Marcos_Juarez?format=j1", headers={"User-Agent": "curl/7.68.0"}, timeout=4)
-        if r2.status_code == 200:
-            d2 = r2.json()
-            c2 = d2['current_condition'][0]
-            w2 = d2['weather']
-            return f"CLIMA MARCOS JUÁREZ: Temp actual {c2['temp_C']}°C (ST {c2['FeelsLikeC']}°C, Humedad {c2['humidity']}%). Pronóstico 3 días - Máximas: {[w['maxtempC'] for w in w2[:3]]}°C, Mínimas: {[w['mintempC'] for w in w2[:3]]}°C."
-    except Exception:
-        pass
-
-    return "CLIMA MARCOS JUÁREZ: Temperatura promedio estimada 22°C, templado, sin alertas severas."
-
-# --------------------------------------------------------------------
+    return "CLIMA MARCOS JUÁREZ: Templado, sin alertas."
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -244,7 +152,7 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 def consultar_gemini(partes_contenido):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={GEMINI_KEY}"
     ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M")
-    memoria_actual = obtener_memoria_y_registros()
+    base_conocimiento = obtener_contexto_completo()
     clima_actual = obtener_clima_actual()
     
     es_primera_vez_hoy = verificar_saludo_hoy()
@@ -260,15 +168,17 @@ def consultar_gemini(partes_contenido):
         f"PROHIBIDO inventar datos personales, ciudades o mascotas. "
         f"CONTEXTO EN TIEMPO REAL:\n"
         f"- Fecha y hora actual: {ahora}\n"
-        f"- Estado del clima: {clima_actual}\n"
-        f"- Base de memoria y registros:\n{memoria_actual}\n\n"
+        f"- Estado del clima: {clima_actual}\n\n"
+        f"BASE DE DATOS Y REGISTROS GUARDADOS:\n{base_conocimiento}\n\n"
         f"{instruccion_saludo}\n"
-        f"REGLAS ESTRICTAS DE COMPORTAMIENTO:\n"
-        f"1. PROHIBIDO ofrecer ayuda al final de la respuesta (no digas '¿Te puedo ayudar en algo más?', '¿Te pongo una alarma?', etc.).\n"
-        f"2. Sé ultra directa, seca y eficiente.\n"
-        f"3. REGLA CRÍTICA PARA AUDIOS: Al responder con notas de voz, comenzá con una breve introducción conversacional y directa.\n"
-        f"4. Regla estricta: NO repitas su nombre bajo ninguna circunstancia.\n"
-        f"5. Respondé en español rioplatense."
+        f"REGLAS ESTRICTAS DE RESPUESTA:\n"
+        f"1. RESPUESTA QUIRÚRGICA: Respondé ÚNICAMENTE a lo que se te pregunta de forma directa. Si te preguntan por medicamentos, mencioná solo los medicamentos. Está PROHIBIDO traer a la respuesta datos de estudios médicos, laboratorios u otros temas a menos que el usuario los pida expresamente.\n"
+        f"2. PROHIBIDO alucinar, inventar o suponer datos que no estén en la base de datos.\n"
+        f"3. PROHIBIDO ofrecer ayuda al final de la respuesta.\n"
+        f"4. Sé ultra directa, seca y eficiente.\n"
+        f"5. REGLA CRÍTICA PARA AUDIOS: Al responder con notas de voz, comenzá con una breve introducción conversacional y directa.\n"
+        f"6. Regla estricta: NO repitas su nombre bajo ninguna circunstancia.\n"
+        f"7. Respondé en español rioplatense."
     )
 
     payload = {
@@ -285,11 +195,10 @@ def extraer_y_aprender(texto_usuario):
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={GEMINI_KEY}"
         prompt_extraccion = (
-            f"Analiza el siguiente texto: '{texto_usuario}'.\n"
-            f"1. Si es una CATA DE CANNABIS, responde en JSON con la clave 'tipo': 'cata' y los campos: cepa, efectos_positivos, efectos_negativos, sedacion, bajon, paranoia, notas.\n"
-            f"2. Si es un REGISTRO MÉDICO O SÍNTOMA, responde en JSON con la clave 'tipo': 'medico' y los campos: tipo_estudio, resumen, valores_clave, observaciones.\n"
-            f"3. Si es un dato personal o preferencia general, responde en JSON con la clave 'tipo': 'recuerdo' y el campo 'texto'.\n"
-            f"4. Si NO hay nada que guardar, responde exactamente la palabra NADA."
+            f"Analiza el texto del usuario: '{texto_usuario}'.\n"
+            f"1. Si es un ESTUDIO MÉDICO o laboratorio formal (con valores o diagnósticos clínicos), responde en JSON con la clave 'tipo': 'medico' y los campos: tipo_estudio, resumen, valores_clave, observaciones.\n"
+            f"2. Si es una toma de medicación, hábito, preferencia o recordatorio diario, responde en JSON con la clave 'tipo': 'recuerdo' y el campo 'texto'.\n"
+            f"3. Si NO hay nada que guardar, responde exactamente la palabra NADA."
         )
         payload = {"contents": [{"parts": [{"text": prompt_extraccion}]}]}
         r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
@@ -303,19 +212,9 @@ def extraer_y_aprender(texto_usuario):
                 if inicio != -1 and fin != -1:
                     parsed = json.loads(resultado[inicio:fin])
                     tipo = parsed.get("tipo")
-                    if tipo == "cata":
-                        guardar_cata(
-                            parsed.get("cepa", "Desconocida"),
-                            parsed.get("efectos_positivos", ""),
-                            parsed.get("efectos_negativos", ""),
-                            str(parsed.get("sedacion", "")),
-                            str(parsed.get("bajon", "")),
-                            str(parsed.get("paranoia", "")),
-                            parsed.get("notas", "")
-                        )
-                    elif tipo == "medico":
+                    if tipo == "medico":
                         guardar_registro_medico(
-                            parsed.get("tipo_estudio", "Consulta/Síntoma"),
+                            parsed.get("tipo_estudio", "Estudio clínico"),
                             parsed.get("resumen", ""),
                             parsed.get("valores_clave", ""),
                             parsed.get("observaciones", "")
@@ -339,113 +238,73 @@ async def generar_audio_respuesta(texto):
     return archivo_audio
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hola. Mis capacidades de voz, texto, visión de documentos/imágenes, cata de cannabis y memoria están listas.")
+    await update.message.reply_text("Listos.")
 
 async def procesar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto_usuario = update.message.text
     if not GEMINI_KEY:
-        await update.message.reply_text("Error: Falta la clave.")
         return
-
     threading.Thread(target=extraer_y_aprender, args=(texto_usuario,), daemon=True).start()
-
     texto_lower = texto_usuario.lower()
-    if texto_lower.startswith("anotá que ") or texto_lower.startswith("aprendé que "):
-        nuevo_conocimiento = texto_usuario.split(" ", 2)[2]
-        guardar_recuerdo(nuevo_conocimiento)
-        await update.message.reply_text("Entendido. Ya lo guardé en mi memoria.")
-        return
-
-    quiere_audio = any(palabra in texto_lower for palabra in ["audio", "voz", "mandámelo en audio", "respondeme en audio", "mandame un audio"])
-
+    quiere_audio = any(p in texto_lower for p in ["audio", "voz", "mandámelo en audio"])
     try:
         respuesta_ia = consultar_gemini([{"text": texto_usuario}])
         if quiere_audio:
             audio_path = await generar_audio_respuesta(respuesta_ia)
             with open(audio_path, 'rb') as audio_file:
                 await update.message.reply_voice(voice=audio_file)
-            try:
-                os.remove(audio_path)
-            except:
-                pass
+            try: os.remove(audio_path)
+            except: pass
         else:
             await update.message.reply_text(respuesta_ia)
     except Exception as e:
-        await update.message.reply_text(f"Error interno: {str(e)}")
+        pass
 
 async def procesar_imagen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not GEMINI_KEY:
-        await update.message.reply_text("Error: Falta la clave.")
-        return
-
+    if not GEMINI_KEY: return
     try:
         foto = update.message.photo[-1]
         file = await foto.get_file()
         img_bytes = await file.download_as_bytearray()
         img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-
         caption = update.message.caption or "Analizá esta imagen."
-        partes = [
-            {"inline_data": {"mime_type": "image/jpeg", "data": img_base64}},
-            {"text": f"El usuario envió una imagen con este mensaje: '{caption}'. Analizá el contenido detalladamente."}
-        ]
-
+        partes = [{"inline_data": {"mime_type": "image/jpeg", "data": img_base64}}, {"text": caption}]
         respuesta_ia = consultar_gemini(partes)
-        threading.Thread(target=extraer_y_aprender, args=(f"Imagen analizada: {caption}. {respuesta_ia}",), daemon=True).start()
+        threading.Thread(target=extraer_y_aprender, args=(f"Imagen: {caption}. {respuesta_ia}",), daemon=True).start()
         await update.message.reply_text(respuesta_ia)
     except Exception as e:
-        await update.message.reply_text(f"Error procesando la imagen: {str(e)}")
+        pass
 
 async def procesar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not GEMINI_KEY:
-        await update.message.reply_text("Error: Falta la clave.")
-        return
-
+    if not GEMINI_KEY: return
     try:
         doc = update.message.document
         file = await doc.get_file()
         doc_bytes = await file.download_as_bytearray()
         doc_base64 = base64.b64encode(doc_bytes).decode('utf-8')
-
-        caption = update.message.caption or "Analizá este documento/PDF y extraé la información relevante."
-        mime_type = doc.mime_type or "application/pdf"
-
-        partes = [
-            {"inline_data": {"mime_type": mime_type, "data": doc_base64}},
-            {"text": f"El usuario envió un documento ({doc.file_name}) con este mensaje: '{caption}'. Analizá el texto, resumí los puntos clave, diagnóstico, valores o conclusiones principales."}
-        ]
-
+        caption = update.message.caption or "Analizá este documento."
+        partes = [{"inline_data": {"mime_type": doc.mime_type or "application/pdf", "data": doc_base64}}, {"text": caption}]
         respuesta_ia = consultar_gemini(partes)
-        threading.Thread(target=extraer_y_aprender, args=(f"Documento analizado: {doc.file_name}. {respuesta_ia}",), daemon=True).start()
+        threading.Thread(target=extraer_y_aprender, args=(f"PDF {doc.file_name}: {caption}. {respuesta_ia}",), daemon=True).start()
         await update.message.reply_text(respuesta_ia)
     except Exception as e:
-        await update.message.reply_text(f"Error procesando el documento: {str(e)}")
+        pass
 
 async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not GEMINI_KEY:
-        await update.message.reply_text("Error: Falta la clave.")
-        return
-
+    if not GEMINI_KEY: return
     try:
         file = await update.message.voice.get_file()
         audio_bytes = await file.download_as_bytearray()
         audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
-
-        partes = [
-            {"inline_data": {"mime_type": "audio/ogg", "data": audio_base64}},
-            {"text": "Escuchá esta nota de voz y respondé de manera natural a lo solicitado."}
-        ]
-
+        partes = [{"inline_data": {"mime_type": "audio/ogg", "data": audio_base64}}, {"text": "Respondé a la nota de voz."}]
         respuesta_ia = consultar_gemini(partes)
         audio_path = await generar_audio_respuesta(respuesta_ia)
         with open(audio_path, 'rb') as audio_file:
             await update.message.reply_voice(voice=audio_file)
-        try:
-            os.remove(audio_path)
-        except:
-            pass
+        try: os.remove(audio_path)
+        except: pass
     except Exception as e:
-        await update.message.reply_text(f"Error procesando el audio: {str(e)}")
+        pass
 
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -454,7 +313,6 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa con control de saludo diario único y respuestas concisas...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
