@@ -250,13 +250,16 @@ def extraer_y_aprender(chat_id, texto_usuario):
         pass
 
 async def generar_audio_respuesta(texto):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    archivo_audio = f"respuesta_{timestamp}.mp3"
-    voz = "es-AR-ElenaNeural"
-    texto_limpio = "".join(c for c in texto if c.isalnum() or c.isspace() or c in ".,;:!?-¿¡")
-    communicate = edge_tts.Communicate(texto_limpio, voz, rate="+5%")
-    await communicate.save(archivo_audio)
-    return archivo_audio
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        archivo_audio = f"respuesta_{timestamp}.mp3"
+        voz = "es-AR-ElenaNeural"
+        texto_limpio = "".join(c for c in texto if c.isalnum() or c.isspace() or c in ".,;:!?-¿¡")
+        communicate = edge_tts.Communicate(texto_limpio, voz, rate="+5%")
+        await communicate.save(archivo_audio)
+        return archivo_audio
+    except Exception as e:
+        return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Listos.")
@@ -269,18 +272,22 @@ async def procesar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     threading.Thread(target=extraer_y_aprender, args=(chat_id, texto_usuario,), daemon=True).start()
     texto_lower = texto_usuario.lower()
     quiere_audio = any(p in texto_lower for p in ["audio", "voz", "mandámelo en audio"])
+    
     try:
         respuesta_ia = consultar_gemini([{"text": texto_usuario}])
         if quiere_audio:
             audio_path = await generar_audio_respuesta(respuesta_ia)
-            with open(audio_path, 'rb') as audio_file:
-                await update.message.reply_voice(voice=audio_file)
-            try: os.remove(audio_path)
-            except: pass
+            if audio_path and os.path.exists(audio_path):
+                with open(audio_path, 'rb') as audio_file:
+                    await update.message.reply_voice(voice=audio_file)
+                try: os.remove(audio_path)
+                except: pass
+            else:
+                await update.message.reply_text(respuesta_ia)
         else:
             await update.message.reply_text(respuesta_ia)
     except Exception as e:
-        pass
+        await update.message.reply_text("Ocurrió un error procesando la consulta.")
 
 async def procesar_imagen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -324,10 +331,13 @@ async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         partes = [{"inline_data": {"mime_type": "audio/ogg", "data": audio_base64}}, {"text": "Respondé a la nota de voz."}]
         respuesta_ia = consultar_gemini(partes)
         audio_path = await generar_audio_respuesta(respuesta_ia)
-        with open(audio_path, 'rb') as audio_file:
-            await update.message.reply_voice(voice=audio_file)
-        try: os.remove(audio_path)
-        except: pass
+        if audio_path and os.path.exists(audio_path):
+            with open(audio_path, 'rb') as audio_file:
+                await update.message.reply_voice(voice=audio_file)
+            try: os.remove(audio_path)
+            except: pass
+        else:
+            await update.message.reply_text(respuesta_ia)
     except Exception as e:
         pass
 
@@ -338,7 +348,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa y estable...")
+    print("Lúthien activa con respaldo de respuesta segura...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
