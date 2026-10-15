@@ -24,7 +24,9 @@ class KeepAliveHandler(BaseHTTPRequestHandler):
 
 def run_keep_alive():
     try:
-        server = HTTPServer(('0.0.0.0', 8080), KeepAliveHandler)
+        port = int(os.environ.get("PORT", 8080))
+        server = HTTPServer(('0.0.0.0', port), KeepAliveHandler)
+        print(f"Servidor web activo en puerto {port}")
         server.serve_forever()
     except Exception as e:
         print(f"Error en servidor keep-alive: {e}")
