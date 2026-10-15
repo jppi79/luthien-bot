@@ -6,7 +6,7 @@ import logging
 import threading
 import requests
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from datetime import datetime
+from datetime import datetime, date
 import edge_tts
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -86,6 +86,14 @@ def inicializar_db():
             )
         """)
         
+        # Tabla para control de interacciones diarias (para el saludo)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS control_sesion (
+                id SERIAL PRIMARY KEY,
+                ultimo_saludo DATE UNIQUE
+            )
+        """)
+        
         conn.commit()
         cursor.close()
         conn.close()
@@ -93,6 +101,29 @@ def inicializar_db():
         pass
 
 inicializar_db()
+
+def verificar_saludo_hoy():
+    if not DATABASE_URL:
+        return False
+    hoy = date.today()
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT ultimo_saludo FROM control_sesion WHERE ultimo_saludo = %s", (hoy,))
+        resultado = cursor.fetchone()
+        if not resultado:
+            # Registrar el saludo de hoy
+            cursor.execute("DELETE FROM control_sesion") # Mantener solo la fecha actual
+            cursor.execute("INSERT INTO control_sesion (ultimo_saludo) VALUES (%s)", (hoy,))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return True # Es el primer mensaje del día
+        cursor.close()
+        conn.close()
+        return False # Ya saludó hoy
+    except Exception as e:
+        return False
 
 def guardar_recuerdo(texto):
     if not texto or len(texto.strip()) < 3 or not DATABASE_URL:
@@ -215,6 +246,13 @@ def consultar_gemini(partes_contenido):
     ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M")
     memoria_actual = obtener_memoria_y_registros()
     clima_actual = obtener_clima_actual()
+    
+    es_primera_vez_hoy = verificar_saludo_hoy()
+    instruccion_saludo = (
+        "REGLA DE SALUDO: Es el primer mensaje del día. Decí estrictamente un 'Buen día' rápido y natural, y pasá directo al contenido."
+        if es_primera_vez_hoy else
+        "REGLA DE SALUDO: PROHIBIDO saludar ('buen día', 'hola', etc.). Ya saludaste hoy. Andá 100% directo al grano y sé totalmente conciso."
+    )
 
     instrucciones = (
         f"Sos Lúthien, la asistente virtual de tu creador. "
@@ -224,11 +262,13 @@ def consultar_gemini(partes_contenido):
         f"- Fecha y hora actual: {ahora}\n"
         f"- Estado del clima: {clima_actual}\n"
         f"- Base de memoria y registros:\n{memoria_actual}\n\n"
-        f"REGLA DE INTERPRETACIÓN: Tenés siempre a disposición la información del clima actual y pronóstico. Si el usuario pregunta sobre el clima, la temperatura, el tiempo o si va a llover, respondé usando los datos de clima del contexto. PROHIBIDO decir que no podés consultar el clima.\n"
-        f"REGLA CRÍTICA PARA AUDIOS: Al responder con notas de voz, comenzá siempre con una breve introducción natural y conversacional, seguida directamente de la respuesta. "
-        f"PROHIBIDO recitar o enumerar los datos de su vida sin sentido. "
-        f"Regla estricta: NO repitas su nombre bajo ninguna circunstancia. "
-        f"Respondé en español rioplatense, de forma directa y cálida."
+        f"{instruccion_saludo}\n"
+        f"REGLAS ESTRICTAS DE COMPORTAMIENTO:\n"
+        f"1. PROHIBIDO ofrecer ayuda al final de la respuesta (no digas '¿Te puedo ayudar en algo más?', '¿Te pongo una alarma?', etc.).\n"
+        f"2. Sé ultra directa, seca y eficiente.\n"
+        f"3. REGLA CRÍTICA PARA AUDIOS: Al responder con notas de voz, comenzá con una breve introducción conversacional y directa.\n"
+        f"4. Regla estricta: NO repitas su nombre bajo ninguna circunstancia.\n"
+        f"5. Respondé en español rioplatense."
     )
 
     payload = {
@@ -414,7 +454,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa con soporte completo para documentos, PDFs, clima y BD...")
+    print("Lúthien activa con control de saludo diario único y respuestas concisas...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
