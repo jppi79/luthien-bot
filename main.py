@@ -179,7 +179,7 @@ def consultar_gemini(partes_contenido):
     )
 
     instrucciones = (
-        f"Sos Lúthien, la asistente virtual proactiva de tu creador. "
+        f"Sos Lúthien, la asistente virtual de tu creador. "
         f"Datos base inalterables: vive en Marcos Juárez, Córdoba, Argentina. Trabaja como analista de procesos en producción en Bertotto Boglione S.A. Tiene una hija (Camila). "
         f"PROHIBIDO inventar datos personales, ciudades o mascotas. "
         f"CONTEXTO EN TIEMPO REAL:\n"
@@ -187,18 +187,16 @@ def consultar_gemini(partes_contenido):
         f"- Estado del clima: {clima_actual}\n\n"
         f"BASE DE DATOS Y REGISTROS GUARDADOS:\n{base_conocimiento}\n\n"
         f"{instruccion_saludo}\n"
-        f"REGLAS DE PROACTIVIDAD Y COMPORTAMIENTO:\n"
-        f"1. PROACTIVIDAD TOTAL: No esperes a que te pidan todo. Si detectás eventos importantes en los registros (como cumpleaños de su hija u otros familiares, aniversarios, asados o citas médicas), anticipate sugiriendo ideas, proponiendo buscar opciones de regalos, organizando logística o preguntando si querés que agende recordatorios con anticipación.\n"
+        f"REGLAS DE COMPORTAMIENTO Y RAZONAMIENTO:\n"
+        f"1. RAZONAMIENTO CRONOLÓGICO Y MATEMÁTICO ESTRICTO: Hacé bien las cuentas exactas de días, semanas y secuencias numéricas (por ejemplo, ciclos de 14 días en medicamentos como Adalimumab). No repitas la misma fecha si te consultan por dosis sucesivas.\n"
         f"2. GESTIÓN DE RECORDATORIOS: Si te pide registrar una cita o evento y no aclara la antelación, preguntásela de inmediato.\n"
-        f"3. RAZONAMIENTO CRONOLÓGICO Y MATEMÁTICO: Hacé bien las cuentas exactas de días y semanas.\n"
-        f"4. PROHIBIDO ofrecer ayuda genérica al final de la respuesta. Sé ultra directa, seca, eficiente y resolutiva.\n"
-        f"5. Regla estricta: NO repitas su nombre bajo ninguna circunstancia. Respondé en español rioplatense."
+        f"3. PROHIBIDO ofrecer ayuda genérica al final de la respuesta. Sé ultra directa, seca, eficiente y resolutiva.\n"
+        f"4. Regla estricta: NO repitas su nombre bajo ninguna circunstancia. Respondé en español rioplatense."
     )
 
     payload = {
         "system_instruction": {"parts": [{"text": instrucciones}]},
-        "contents": [{"parts": partes_contenido}],
-        "tools": [{"google_search": {}}]
+        "contents": [{"parts": partes_contenido}]
     }
 
     headers = {"Content-Type": "application/json"}
@@ -340,7 +338,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa y proactiva...")
+    print("Lúthien activa y estable...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
