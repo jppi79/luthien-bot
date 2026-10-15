@@ -108,17 +108,18 @@ def obtener_contexto_completo():
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT recuerdo FROM memoria ORDER BY fecha DESC LIMIT 30")
+        # Traer todos los recuerdos sin límite restrictivo para no perder nada
+        cursor.execute("SELECT recuerdo FROM memoria ORDER BY fecha DESC")
         recuerdos = [r[0] for r in cursor.fetchall()]
         
-        cursor.execute("SELECT tipo_estudio, resumen_diagnostico, valores_clave, observaciones FROM historial_medico ORDER BY fecha DESC LIMIT 10")
+        cursor.execute("SELECT tipo_estudio, resumen_diagnostico, valores_clave, observaciones FROM historial_medico ORDER BY fecha DESC")
         medicos = [f"Estudio: {m[0]} | Resumen: {m[1]} | Valores: {m[2]} | Obs: {m[3]}" for m in cursor.fetchall()]
         
         cursor.close()
         conn.close()
         
-        t_recuerdos = "REGISTROS Y RECUERDOS GENERALES (Medicamentos y notas):\n" + ("\n".join([f"- {r}" for r in recuerdos]) if recuerdos else "Ninguno")
-        t_medicos = "\n\nHISTORIAL MÉDICO OFICIAL (Estudios y laboratorios):\n" + ("\n".join([f"- {m}" for m in medicos]) if medicos else "Ninguno registrado.")
+        t_recuerdos = "REGISTROS Y RECUERDOS GENERALES (Medicamentos, tomas y notas):\n" + ("\n".join([f"- {r}" for r in recuerdos]) if recuerdos else "Ninguno")
+        t_medicos = "\n\nHISTORIAL MÉDICO OFICIAL:\n" + ("\n".join([f"- {m}" for m in medicos]) if medicos else "Ninguno registrado.")
         
         return f"{t_recuerdos}\n\n{t_medicos}"
     except Exception as e:
@@ -169,10 +170,10 @@ def consultar_gemini(partes_contenido):
         f"CONTEXTO EN TIEMPO REAL:\n"
         f"- Fecha y hora actual: {ahora}\n"
         f"- Estado del clima: {clima_actual}\n\n"
-        f"BASE DE DATOS Y REGISTROS GUARDADOS:\n{base_conocimiento}\n\n"
+        f"BASE DE DATOS Y REGISTROS GUARDADOS (LEÉ ESTO CON ATENCIÓN Y NO OMITAS NADA):\n{base_conocimiento}\n\n"
         f"{instruccion_saludo}\n"
         f"REGLAS ESTRICTAS DE RESPUESTA:\n"
-        f"1. RESPUESTA QUIRÚRGICA: Respondé ÚNICAMENTE a lo que se te pregunta de forma directa. Si te preguntan por medicamentos, mencioná solo los medicamentos. Está PROHIBIDO traer a la respuesta datos de estudios médicos, laboratorios u otros temas a menos que el usuario los pida expresamente.\n"
+        f"1. RESPUESTA QUIRÚRGICA Y EXACTA: Si te preguntan por la medicación, revisá TODOS los registros de arriba y enumerá absolutamente todos los medicamentos que se hayan guardado (Pantoprazol, Talmidol XR, Metformina, Valsartán, Etoricoxib, etc.). Está PROHIBIDO omitir la mitad de los medicamentos.\n"
         f"2. PROHIBIDO alucinar, inventar o suponer datos que no estén en la base de datos.\n"
         f"3. PROHIBIDO ofrecer ayuda al final de la respuesta.\n"
         f"4. Sé ultra directa, seca y eficiente.\n"
@@ -196,9 +197,10 @@ def extraer_y_aprender(texto_usuario):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={GEMINI_KEY}"
         prompt_extraccion = (
             f"Analiza el texto del usuario: '{texto_usuario}'.\n"
-            f"1. Si es un ESTUDIO MÉDICO o laboratorio formal (con valores o diagnósticos clínicos), responde en JSON con la clave 'tipo': 'medico' y los campos: tipo_estudio, resumen, valores_clave, observaciones.\n"
-            f"2. Si es una toma de medicación, hábito, preferencia o recordatorio diario, responde en JSON con la clave 'tipo': 'recuerdo' y el campo 'texto'.\n"
-            f"3. Si NO hay nada que guardar, responde exactamente la palabra NADA."
+            f"Si el usuario menciona medicamentos, tomas, dosis o correcciones de su medicación, extraé cada medicamento por separado en frases claras (ejemplo: 'Toma Valsartán', 'Toma Etoricoxib').\n"
+            f"1. Si es un estudio clínico con valores, responde en JSON con 'tipo': 'medico' y los campos: tipo_estudio, resumen, valores_clave, observaciones.\n"
+            f"2. Si es medicación, hábito, preferencia o recordatorio, responde en JSON con 'tipo': 'recuerdo' y el campo 'texto'.\n"
+            f"3. Si NO hay nada que guardar, responde la palabra NADA."
         )
         payload = {"contents": [{"parts": [{"text": prompt_extraccion}]}]}
         r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
@@ -222,7 +224,10 @@ def extraer_y_aprender(texto_usuario):
                     elif tipo == "recuerdo":
                         guardar_recuerdo(parsed.get("texto", resultado))
                 else:
-                    guardar_recuerdo(resultado)
+                    # Si no devolvió JSON puro pero hay texto válido, guardarlo directo como recuerdo
+                    for linea in resultado.split('\n'):
+                        if len(linea.strip()) > 3:
+                            guardar_recuerdo(linea.strip())
             except Exception:
                 guardar_recuerdo(resultado)
     except Exception as e:
