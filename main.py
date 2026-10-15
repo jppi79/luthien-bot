@@ -186,7 +186,7 @@ def consultar_gemini(contenido_prompt):
         )
 
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-3.8-flash",
             system_instruction=instrucciones
         )
         response = model.generate_content(contenido_prompt)
@@ -196,7 +196,7 @@ def consultar_gemini(contenido_prompt):
 
 def extraer_y_aprender(chat_id, texto_usuario):
     try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model = genai.GenerativeModel("gemini-3.8-flash")
         prompt_extraccion = (
             f"Analiza el texto del usuario: '{texto_usuario}'.\n"
             f"1. Si menciona fechas importantes, cumpleaños, citas, turnos, asados o eventos a recordar, responde en JSON con 'tipo': 'recordatorio' y los campos: evento, fecha_evento, antelacion.\n"
@@ -326,7 +326,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa con gemini-2.5-flash...")
+    print("Lúthien activa con gemini-3.8-flash...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
