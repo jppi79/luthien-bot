@@ -36,8 +36,18 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 
+MODELO_ACTIVO = "gemini-1.5-flash"  # Valor por defecto seguro
+
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
+    try:
+        # Detectar automáticamente el modelo flash disponible para la API Key
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods and 'flash' in m.name:
+                MODELO_ACTIVO = m.name.replace("models/", "")
+                break
+    except Exception:
+        pass
 
 def inicializar_db():
     if not DATABASE_URL:
@@ -46,7 +56,6 @@ def inicializar_db():
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
         cursor.execute("CREATE TABLE IF NOT EXISTS memoria (id SERIAL PRIMARY KEY, recuerdo TEXT NOT NULL, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-        cursor.execute("CREATE TABLE IF NOT EXISTS catas_cannabis (id SERIAL PRIMARY KEY, cepa TEXT NOT NULL, efectos_positivos TEXT, efectos_negativos TEXT, nivel_sedacion TEXT, nivel_bajon TEXT, nivel_paranoia TEXT, notas TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute("CREATE TABLE IF NOT EXISTS historial_medico (id SERIAL PRIMARY KEY, tipo_estudio TEXT NOT NULL, resumen_diagnostico TEXT NOT NULL, valores_clave TEXT, observaciones TEXT, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute("CREATE TABLE IF NOT EXISTS recordatorios (id SERIAL PRIMARY KEY, chat_id BIGINT, evento TEXT NOT NULL, fecha_evento TEXT, antelacion TEXT, notificado BOOLEAN DEFAULT FALSE, fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
         cursor.execute("CREATE TABLE IF NOT EXISTS control_sesion (id SERIAL PRIMARY KEY, ultimo_saludo DATE UNIQUE)")
@@ -186,46 +195,18 @@ def consultar_gemini(contenido_prompt):
         )
 
         model = genai.GenerativeModel(
-            model_name="gemini-3.8-flash",
+            model_name=MODELO_ACTIVO,
             system_instruction=instrucciones
         )
         response = model.generate_content(contenido_prompt)
+        
+        texto_str = str(contenido_prompt) if isinstance(contenido_prompt, str) else str(contenido_prompt[0])
+        if any(w in texto_str.lower() for w in ["tomo", "recuerda", "anotá", "turno", "cumpleaños", "comprar"]):
+            guardar_recuerdo(texto_str)
+
         return response.text
     except Exception as e:
         return f"Error de conexión con IA: {str(e)}"
-
-def extraer_y_aprender(chat_id, texto_usuario):
-    try:
-        model = genai.GenerativeModel("gemini-3.8-flash")
-        prompt_extraccion = (
-            f"Analiza el texto del usuario: '{texto_usuario}'.\n"
-            f"1. Si menciona fechas importantes, cumpleaños, citas, turnos, asados o eventos a recordar, responde en JSON con 'tipo': 'recordatorio' y los campos: evento, fecha_evento, antelacion.\n"
-            f"2. Si es un estudio clínico, responde en JSON con 'tipo': 'medico' y los campos: tipo_estudio, resumen, valores_clave, observaciones.\n"
-            f"3. Si es medicación, hábito, dato personal o preferencia, responde en JSON con 'tipo': 'recuerdo' y el campo 'texto'.\n"
-            f"4. Si NO hay nada que guardar, responde exactamente la palabra NADA."
-        )
-        response = model.generate_content(prompt_extraccion)
-        resultado = response.text.strip()
-        
-        if "NADA" not in resultado.upper():
-            inicio = resultado.find('{')
-            fin = resultado.rfind('}') + 1
-            if inicio != -1 and fin != -1:
-                parsed = json.loads(resultado[inicio:fin])
-                tipo = parsed.get("tipo")
-                if tipo == "medico":
-                    guardar_registro_medico(
-                        parsed.get("tipo_estudio", "Estudio clínico"),
-                        parsed.get("resumen", ""),
-                        parsed.get("valores_clave", ""),
-                        parsed.get("observaciones", "")
-                    )
-                elif tipo == "recuerdo":
-                    guardar_recuerdo(parsed.get("texto", resultado))
-            else:
-                guardar_recuerdo(resultado)
-    except Exception as e:
-        pass
 
 async def generar_audio_respuesta(texto):
     try:
@@ -243,11 +224,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Listos.")
 
 async def procesar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
     texto_usuario = update.message.text
     if not GEMINI_KEY:
         return
-    threading.Thread(target=extraer_y_aprender, args=(chat_id, texto_usuario,), daemon=True).start()
     texto_lower = texto_usuario.lower()
     quiere_audio = any(p in texto_lower for p in ["audio", "voz", "mandámelo en audio"])
     
@@ -268,7 +247,6 @@ async def procesar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ocurrió un error procesando la consulta.")
 
 async def procesar_imagen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
     if not GEMINI_KEY: return
     try:
         foto = update.message.photo[-1]
@@ -278,13 +256,11 @@ async def procesar_imagen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         imagen_parte = {"mime_type": "image/jpeg", "data": bytes(img_bytes)}
         respuesta_ia = consultar_gemini([caption, imagen_parte])
-        threading.Thread(target=extraer_y_aprender, args=(chat_id, f"Imagen: {caption}. {respuesta_ia}",), daemon=True).start()
         await update.message.reply_text(respuesta_ia)
     except Exception as e:
         await update.message.reply_text("Error al procesar la imagen.")
 
 async def procesar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
     if not GEMINI_KEY: return
     try:
         doc = update.message.document
@@ -294,13 +270,11 @@ async def procesar_documento(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         doc_parte = {"mime_type": doc.mime_type or "application/pdf", "data": bytes(doc_bytes)}
         respuesta_ia = consultar_gemini([caption, doc_parte])
-        threading.Thread(target=extraer_y_aprender, args=(chat_id, f"PDF {doc.file_name}: {caption}. {respuesta_ia}",), daemon=True).start()
         await update.message.reply_text(respuesta_ia)
     except Exception as e:
         await update.message.reply_text("Error al procesar el documento.")
 
 async def procesar_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
     if not GEMINI_KEY: return
     try:
         file = await update.message.voice.get_file()
@@ -326,7 +300,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa con gemini-3.8-flash...")
+    print(f"Lúthien activa utilizando el modelo dinámico: {MODELO_ACTIVO}")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
