@@ -11,7 +11,6 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import google.generativeai as genai
 
-# --- SERVIDOR FANTASMA PARA MANTENER ACTIVO EN RENDER/WEB ---
 class KeepAliveHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -30,7 +29,6 @@ def run_keep_alive():
         pass
 
 threading.Thread(target=run_keep_alive, daemon=True).start()
-# --------------------------------------------------------
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -39,8 +37,8 @@ GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 
-# Usamos explícitamente el modelo estándar y estable para evitar fallos de nombres
-MODELO_ACTIVO = "gemini-1.5-flash"
+# Usamos el nombre exacto que exige la versión actual del SDK oficial
+MODELO_ACTIVO = "gemini-2.5-flash"
 
 def inicializar_db():
     if not DATABASE_URL:
@@ -74,7 +72,7 @@ def verificar_saludo_hoy():
             cursor.execute("INSERT INTO control_sesion (ultimo_saludo) VALUES (%s)", (hoy,))
             conn.commit()
             cursor.close()
-            cursor.close()
+            conn.close()
             return True
         cursor.close()
         conn.close()
@@ -329,7 +327,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print(f"Lúthien activa con modelo fijo: {MODELO_ACTIVO}")
+    print(f"Lúthien activa y estable con modelo: {MODELO_ACTIVO}")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
