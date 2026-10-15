@@ -1,5 +1,5 @@
 python-telegram-bot
-google-generativeai
-edge-tts
 psycopg2-binary
 requests
+edge-tts
+google-genai
