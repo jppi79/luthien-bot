@@ -87,7 +87,7 @@ def guardar_recuerdo(texto):
             cursor.execute("INSERT INTO memoria (recuerdo) VALUES (%s)", (texto.strip(),))
             conn.commit()
         cursor.close()
-        conn.close()
+        cursor.close()
     except Exception as e:
         pass
 
@@ -100,20 +100,7 @@ def guardar_registro_medico(tipo, resumen, valores, observaciones):
         cursor.execute("INSERT INTO historial_medico (tipo_estudio, resumen_diagnostico, valores_clave, observaciones) VALUES (%s, %s, %s, %s)", (tipo, resumen, valores, observaciones))
         conn.commit()
         cursor.close()
-        conn.close()
-    except Exception as e:
-        pass
-
-def guardar_recordatorio_bd(chat_id, evento, fecha_evento, antelacion):
-    if not DATABASE_URL:
-        return
-    try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO recordatorios (chat_id, evento, fecha_evento, antelacion, notificado) VALUES (%s, %s, %s, %s, FALSE)", (chat_id, evento, fecha_evento, antelacion))
-        conn.commit()
         cursor.close()
-        conn.close()
     except Exception as e:
         pass
 
@@ -227,12 +214,7 @@ def extraer_y_aprender(chat_id, texto_usuario):
                     parsed = json.loads(resultado[inicio:fin])
                     tipo = parsed.get("tipo")
                     if tipo == "recordatorio":
-                        guardar_recordatorio_bd(
-                            chat_id,
-                            parsed.get("evento", "Evento general"),
-                            parsed.get("fecha_evento", "Próximamente"),
-                            parsed.get("antelacion")
-                        )
+                        pass
                     elif tipo == "medico":
                         guardar_registro_medico(
                             parsed.get("tipo_estudio", "Estudio clínico"),
@@ -348,7 +330,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa con respaldo de respuesta segura...")
+    print("Lúthien activa y estable...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
