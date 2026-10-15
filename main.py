@@ -172,12 +172,13 @@ def obtener_memoria_y_registros():
 
 # --- FUNCIÓN CON INTEGRACIÓN AL SERVICIO METEOROLÓGICO NACIONAL (SMN) ---
 def obtener_clima_actual():
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    # Open-Meteo exige que los bots se identifiquen con su propio nombre, no como navegadores
+    headers = {'User-Agent': 'LuthienBot/1.0'}
     
     # Intento 1: API Servicio Meteorológico Nacional (SMN)
     try:
         url_smn = "https://smn-api.vercel.app/api/v1/weather/latest" 
-        res = requests.get(url_smn, headers=headers, timeout=4)
+        res = requests.get(url_smn, headers=headers, timeout=5)
         if res.status_code == 200:
             datos_smn = res.json()
             estacion = next((item for item in datos_smn if "Marcos Juárez" in item.get('name', '') or "Marcos Juarez" in item.get('name', '')), None)
@@ -192,7 +193,7 @@ def obtener_clima_actual():
                 pronostico = ""
                 try:
                     url_om = "https://api.open-meteo.com/v1/forecast?latitude=-32.6997&longitude=-62.1028&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Argentina/Cordoba"
-                    res_om = requests.get(url_om, headers=headers, timeout=3)
+                    res_om = requests.get(url_om, headers=headers, timeout=4)
                     if res_om.status_code == 200:
                         daily = res_om.json().get('daily', {})
                         maxs = daily.get('temperature_2m_max', [])
@@ -209,7 +210,7 @@ def obtener_clima_actual():
     # Intento 2: Open-Meteo (Respaldo directo)
     try:
         url_clima = "https://api.open-meteo.com/v1/forecast?latitude=-32.6997&longitude=-62.1028&current=temperature_2m,relative_humidity_2m,apparent_temperature&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=America/Argentina/Cordoba"
-        res = requests.get(url_clima, headers=headers, timeout=4)
+        res = requests.get(url_clima, headers=headers, timeout=5)
         if res.status_code == 200:
             data = res.json()
             current = data.get('current', {})
