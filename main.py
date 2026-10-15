@@ -153,43 +153,48 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
 
 def consultar_gemini(partes_contenido):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
-    ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M")
-    base_conocimiento = obtener_contexto_completo()
-    clima_actual = obtener_clima_actual()
-    
-    es_primera_vez_hoy = verificar_saludo_hoy()
-    instruccion_saludo = (
-        "REGLA DE SALUDO: Es el primer mensaje del día. Decí estrictamente un 'Buen día' rápido y natural, y pasá directo al contenido."
-        if es_primera_vez_hoy else
-        "REGLA DE SALUDO: PROHIBIDO saludar ('buen día', 'hola', etc.). Ya saludaste hoy. Andá 100% directo al grano y sé totalmente conciso."
-    )
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+        ahora = datetime.now().strftime("%A %d de %B de %Y, %H:%M")
+        base_conocimiento = obtener_contexto_completo()
+        clima_actual = obtener_clima_actual()
+        
+        es_primera_vez_hoy = verificar_saludo_hoy()
+        instruccion_saludo = (
+            "REGLA DE SALUDO: Es el primer mensaje del día. Decí estrictamente un 'Buen día' rápido y natural, y pasá directo al contenido."
+            if es_primera_vez_hoy else
+            "REGLA DE SALUDO: PROHIBIDO saludar ('buen día', 'hola', etc.). Ya saludaste hoy. Andá 100% directo al grano y sé totalmente conciso."
+        )
 
-    instrucciones = (
-        f"Sos Lúthien, la asistente virtual de tu creador. "
-        f"Datos base inalterables: vive en Marcos Juárez, Córdoba, Argentina. Trabaja como analista de procesos en producción en Bertotto Boglione S.A. Tiene una hija (Camila). "
-        f"PROHIBIDO inventar datos personales, ciudades o mascotas. "
-        f"CONTEXTO EN TIEMPO REAL:\n"
-        f"- Fecha y hora actual: {ahora}\n"
-        f"- Estado del clima: {clima_actual}\n\n"
-        f"BASE DE DATOS Y REGISTROS GUARDADOS:\n{base_conocimiento}\n\n"
-        f"{instruccion_saludo}\n"
-        f"REGLAS DE COMPORTAMIENTO Y RAZONAMIENTO:\n"
-        f"1. RAZONAMIENTO CRONOLÓGICO Y MATEMÁTICO ESTRICTO: Hacé bien las cuentas exactas de días, semanas y secuencias numéricas (por ejemplo, ciclos de 14 días en medicamentos como Adalimumab). No repitas la misma fecha si te consultan por dosis sucesivas.\n"
-        f"2. GESTIÓN DE RECORDATORIOS: Si te pide registrar una cita o evento y no aclara la antelación, preguntásela de inmediato.\n"
-        f"3. PROHIBIDO ofrecer ayuda genérica al final de la respuesta. Sé ultra directa, seca, eficiente y resolutiva.\n"
-        f"4. Regla estricta: NO repitas su nombre bajo ninguna circunstancia. Respondé en español rioplatense."
-    )
+        instrucciones = (
+            f"Sos Lúthien, la asistente virtual de tu creador. "
+            f"Datos base inalterables: vive en Marcos Juárez, Córdoba, Argentina. Trabaja como analista de procesos en producción en Bertotto Boglione S.A. Tiene una hija (Camila). "
+            f"PROHIBIDO inventar datos personales, ciudades o mascotas. "
+            f"CONTEXTO EN TIEMPO REAL:\n"
+            f"- Fecha y hora actual: {ahora}\n"
+            f"- Estado del clima: {clima_actual}\n\n"
+            f"BASE DE DATOS Y REGISTROS GUARDADOS:\n{base_conocimiento}\n\n"
+            f"{instruccion_saludo}\n"
+            f"REGLAS DE COMPORTAMIENTO Y RAZONAMIENTO:\n"
+            f"1. RAZONAMIENTO CRONOLÓGICO Y MATEMÁTICO ESTRICTO: Hacé bien las cuentas exactas de días, semanas y secuencias numéricas (por ejemplo, ciclos de 14 días en medicamentos como Adalimumab). No repitas la misma fecha si te consultan por dosis sucesivas.\n"
+            f"2. GESTIÓN DE RECORDATORIOS: Si te pide registrar una cita o evento y no aclara la antelación, preguntásela de inmediato.\n"
+            f"3. PROHIBIDO ofrecer ayuda genérica al final de la respuesta. Sé ultra directa, seca, eficiente y resolutiva.\n"
+            f"4. Regla estricta: NO repitas su nombre bajo ninguna circunstancia. Respondé en español rioplatense."
+        )
 
-    payload = {
-        "system_instruction": {"parts": [{"text": instrucciones}]},
-        "contents": [{"parts": partes_contenido}]
-    }
+        payload = {
+            "system_instruction": {"parts": [{"text": instrucciones}]},
+            "contents": [{"parts": partes_contenido}]
+        }
 
-    headers = {"Content-Type": "application/json"}
-    r = requests.post(url, json=payload, headers=headers, timeout=15)
-    datos = r.json()
-    return datos['candidates'][0]['content']['parts'][0]['text']
+        headers = {"Content-Type": "application/json"}
+        r = requests.post(url, json=payload, headers=headers, timeout=15)
+        if r.status_code == 200:
+            datos = r.json()
+            return datos['candidates'][0]['content']['parts'][0]['text']
+        return "Demora conectando con el motor de IA."
+    except Exception as e:
+        return "Error temporal al consultar el servidor."
 
 def extraer_y_aprender(chat_id, texto_usuario):
     try:
@@ -330,7 +335,7 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO, procesar_imagen))
     app.add_handler(MessageHandler(filters.Document.ALL, procesar_documento))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, procesar_texto))
-    print("Lúthien activa y estable...")
+    print("Lúthien activa y protegida contra errores...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
